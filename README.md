@@ -6,6 +6,8 @@ The repository includes ten fictional resumes for trying the app. Candidate rank
 
 For an explanation of the processing flow, score formula, design choices, and known limitations, see the [Project Guide](docs/PROJECT_GUIDE.md).
 
+For an assignment-focused summary of requirement coverage and the matching algorithm, see the [Technical Approach](docs/TECHNICAL_APPROACH.md).
+
 ## Features
 
 - Create a role from pasted text or an uploaded PDF/DOCX job description.

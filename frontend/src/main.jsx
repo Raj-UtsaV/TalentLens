@@ -24,6 +24,29 @@ function projectParts(project){
   const [title,...details]=project.split('\n');
   return {title,details,tools:[],links:[]};
 }
+function scoreReason(component, score, candidate){
+  const criteria=candidate.criteria||{};
+  if(component==='skills'){
+    const required=criteria.required_skills||[];
+    if(score===null||!required.length)return 'No required skills were extracted from this role, so this component is not scored.';
+    const matched=candidate.matched_skills||[],missing=candidate.missing_skills||[];
+    return `Found ${matched.length} of ${required.length} required skills.${matched.length?` Matched: ${matched.join(', ')}.`:''}${missing.length?` Not found: ${missing.join(', ')}.`:''}`;
+  }
+  if(component==='semantic')return score===null?'Role or resume text was not available for semantic comparison.':'Compares the meaning of the job description with the resume text; related wording can match even without the exact same phrase.';
+  if(component==='experience'){
+    if(!criteria.min_experience)return 'The job description does not state a minimum experience requirement, so experience is not scored.';
+    if(candidate.experience_years===null)return `The role asks for ${criteria.min_experience}+ years, but no reliable experience duration was identified in the resume.`;
+    return `${candidate.experience_years} years identified against ${criteria.min_experience} required; the score scales proportionally and is capped at 100%.`;
+  }
+  if(component==='education'){
+    const qualifications=criteria.qualifications||[];
+    if(score===null||!qualifications.length)return 'No education requirement was extracted from the job description, so this component is not scored.';
+    const records=candidate.education_records||[];
+    const found=records.map(record=>[record.qualification,record.institution,record.result].filter(Boolean).join(' · ')).filter(Boolean);
+    return `Role criteria: ${qualifications.join('; ')}. Resume evidence: ${found.slice(0,3).join(' | ')||'No grouped education evidence identified'}. Related technology branches may receive full field-match credit.`;
+  }
+  return '';
+}
 function App(){
   const [description,setDescription]=useState(''),[jdFile,setJdFile]=useState(null),[roleTitle,setRoleTitle]=useState(''),[roleMode,setRoleMode]=useState('new'),[editingRole,setEditingRole]=useState(false),[editTitle,setEditTitle]=useState(''),[editDescription,setEditDescription]=useState(''),[rolePreview,setRolePreview]=useState(null),[previewingRole,setPreviewingRole]=useState(false),[savingRole,setSavingRole]=useState(false),[reanalyzing,setReanalyzing]=useState(false),[search,setSearch]=useState(''),[job,setJob]=useState(null),[jobs,setJobs]=useState([]),[rows,setRows]=useState([]),[selected,setSelected]=useState(null),[showResume,setShowResume]=useState(false),[files,setFiles]=useState([]),[loading,setLoading]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   async function refreshJobs(){const data=await api('/api/jobs');setJobs(data);}
@@ -89,6 +112,7 @@ function App(){
   const canSubmit=files.length>0&&(roleMode==='saved'?Boolean(job):Boolean(jdFile)||description.trim().length>=20);
   const visibleRows=rows.filter(candidate=>`${candidate.name||''} ${candidate.filename} ${candidate.matched_skills.join(' ')}`.toLowerCase().includes(search.toLowerCase()));
   const averageScore=rows.length?Math.round(rows.reduce((sum,c)=>sum+c.overall_score,0)/rows.length):0;
+  const skillReasons=selected?[...selected.matched_skills.map(skill=>({skill,matched:true})),...selected.missing_skills.map(skill=>({skill,matched:false}))]:[];
   return <main className="shell"><header><div className="brand"><div className="logo"><BriefcaseBusiness size={20}/></div><div><strong>talent<span>lens</span></strong><small>AI resume matching</small></div></div><span className="top-label">RECRUITING WORKSPACE</span></header>
     <section className="intro"><div><div className="eyebrow">SMARTER SHORTLISTS</div><h1>Find the right people,<br/><em>with confidence.</em></h1><p>Match candidate experience to the work that matters.</p></div><div className="intro-mark"><Users size={36}/></div></section>
     {error&&<div className="alert">{error}<button onClick={()=>setError('')}><X size={15}/></button></div>}
@@ -137,8 +161,10 @@ function App(){
       <div className="analysis-tabs"><button className={!showResume?'active':''} onClick={()=>setShowResume(false)}>Analysis</button><button className={showResume?'active':''} onClick={()=>setShowResume(true)}><Eye size={14}/>Resume file</button></div>
       {showResume?<><h3>Original resume · {selected.filename}</h3>{!selected.has_original_file?<div className="resume-download"><FileText size={24}/><span>This resume was saved before original-file viewing was added.</span><small>Re-upload the same file to attach its original document; it will update the saved candidate.</small></div>:/\.pdf$/i.test(selected.filename)?<iframe className="resume-pdf" title={`Original resume for ${selected.name||selected.filename}`} src={`/api/candidates/${selected.id}/resume`}/>:<div className="resume-download"><FileText size={24}/><span>DOCX files cannot be previewed in this browser.</span><a href={`/api/candidates/${selected.id}/resume`}>Download original resume</a></div>}</>:<>
       <h3>Score breakdown</h3>
-      {Object.entries(selected.scores).filter(([k])=>k!=='weights').map(([k,v])=><div className={`breakdown ${v===null?'not-applicable':''}`} key={k}><span>{k}</span><b>{v===null?'N/A':`${v}%`}</b>{v!==null&&<i><i style={{width:`${v}%`}}/></i>}</div>)}
+      {Object.entries(selected.scores).filter(([k])=>k!=='weights').map(([k,v])=><div className={`breakdown ${v===null?'not-applicable':''}`} key={k}><span>{k}</span><b>{v===null?'N/A':`${v}%`}</b>{v!==null&&<i><i style={{width:`${v}%`}}/></i>}<small className="breakdown-reason">{scoreReason(k,v,selected)}</small></div>)}
       <h3>Required skills</h3><div className="tags large">{selected.matched_skills.map(s=><span className="matched" key={s}>✓ {s}</span>)}{selected.missing_skills.map(s=><span className="missing" key={s}>− {s}</span>)}</div>
+      <h3>Why each skill matched</h3>
+      <div className="requirement-reasons">{skillReasons.length?skillReasons.map(({skill,matched})=><div className={`requirement-reason ${matched?'is-matched':'is-missing'}`} key={skill}><span className="reason-status">{matched?'Matched':'Missing'}</span><b>{skill}</b><p>{matched?(selected.evidence?.[skill]||'Skill detected in resume text; no concise excerpt was available.'):'No supporting mention was found in the extracted resume text.'}</p></div>):<p className="empty-note">No required skills were extracted from this role.</p>}</div>
       <p className="explanation">{selected.explanation}</p>
       <h3>Employment history</h3>
       <div className="analysis-list">{selected.employment.length?selected.employment.map((item,i)=><p className="evidence-card" key={i}><span className="evidence-icon">W</span><span>{item}</span></p>):<p className="empty-note">No employment history was identified in this resume.</p>}</div>

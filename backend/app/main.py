@@ -200,7 +200,9 @@ def candidate_detail(candidate_id: int, db: Session = Depends(get_db)):
             "skills": profile["skills"] or c.skills, "education": education,
             "education_records": group_education(education), "employment": profile["employment"] or c.employment,
             "projects": profile["projects"] or c.projects,
-            "has_original_file": bool(c.document_data), "evidence": c.evidence, "explanation": c.explanation}
+            "criteria": {"required_skills": c.job.required_skills or [], "preferred_skills": c.job.preferred_skills or [],
+                         "min_experience": c.job.min_experience, "qualifications": c.job.qualifications or []},
+            "has_original_file": bool(c.document_data), "evidence": profile["evidence"] or c.evidence, "explanation": c.explanation}
 
 
 @app.get("/api/candidates/{candidate_id}/resume", status_code=200)
